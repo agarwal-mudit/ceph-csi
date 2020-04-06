@@ -1,6 +1,7 @@
 package e2e
 
 import (
+	"context"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -35,6 +36,8 @@ const (
 	vaultSecretNs = "/secret/ceph-csi/" // nolint: gosec
 )
 
+var ctx context.Context = context.Background()
+
 var (
 	// cli flags
 	deployTimeout    int
@@ -66,13 +69,13 @@ func createNamespace(c clientset.Interface, name string) error {
 			Name: name,
 		},
 	}
-	_, err := c.CoreV1().Namespaces().Create(ns)
+	_, err := c.CoreV1().Namespaces().Create(ctx, ns, metav1.CreateOptions{})
 	if err != nil && !apierrs.IsAlreadyExists(err) {
 		return err
 	}
 
 	return wait.PollImmediate(poll, timeout, func() (bool, error) {
-		_, err := c.CoreV1().Namespaces().Get(name, metav1.GetOptions{})
+		_, err := c.CoreV1().Namespaces().Get(ctx, name, metav1.GetOptions{})
 		if err != nil {
 			e2elog.Logf("Error getting namespace: '%s': %v", name, err)
 			if apierrs.IsNotFound(err) {
@@ -89,12 +92,12 @@ func createNamespace(c clientset.Interface, name string) error {
 
 func deleteNamespace(c clientset.Interface, name string) error {
 	timeout := time.Duration(deployTimeout) * time.Minute
-	err := c.CoreV1().Namespaces().Delete(name, nil)
+	err := c.CoreV1().Namespaces().Delete(ctx, name, metav1.DeleteOptions{})
 	if err != nil && !apierrs.IsNotFound(err) {
 		Fail(err.Error())
 	}
 	return wait.PollImmediate(poll, timeout, func() (bool, error) {
-		_, err = c.CoreV1().Namespaces().Get(name, metav1.GetOptions{})
+		_, err = c.CoreV1().Namespaces().Get(ctx, name, metav1.GetOptions{})
 		if err != nil {
 			if apierrs.IsNotFound(err) {
 				return true, nil
@@ -123,7 +126,7 @@ func waitForDaemonSets(name, ns string, c clientset.Interface, t int) error {
 	e2elog.Logf("Waiting up to %v for all daemonsets in namespace '%s' to start", timeout, ns)
 
 	return wait.PollImmediate(poll, timeout, func() (bool, error) {
-		ds, err := c.AppsV1().DaemonSets(ns).Get(name, metav1.GetOptions{})
+		ds, err := c.AppsV1().DaemonSets(ns).Get(ctx, name, metav1.GetOptions{})
 		if err != nil {
 			e2elog.Logf("Error getting daemonsets in namespace: '%s': %v", ns, err)
 			if strings.Contains(err.Error(), "not found") {
@@ -155,7 +158,7 @@ func waitForDeploymentComplete(name, ns string, c clientset.Interface, t int) er
 	)
 	timeout := time.Duration(t) * time.Minute
 	err = wait.PollImmediate(poll, timeout, func() (bool, error) {
-		deployment, err = c.AppsV1().Deployments(ns).Get(name, metav1.GetOptions{})
+		deployment, err = c.AppsV1().Deployments(ns).Get(ctx, name, metav1.GetOptions{})
 		if err != nil {
 			return false, err
 		}
@@ -183,7 +186,7 @@ func waitForDeploymentComplete(name, ns string, c clientset.Interface, t int) er
 
 func getCommandInPodOpts(f *framework.Framework, c, ns string, opt *metav1.ListOptions) framework.ExecOptions {
 	cmd := []string{"/bin/sh", "-c", c}
-	podList, err := f.PodClientNS(ns).List(*opt)
+	podList, err := f.PodClientNS(ns).List(ctx, *opt)
 	framework.ExpectNoError(err)
 	Expect(podList.Items).NotTo(BeNil())
 	Expect(err).Should(BeNil())
@@ -223,7 +226,7 @@ func getMons(ns string, c kubernetes.Interface) []string {
 	opt := metav1.ListOptions{
 		LabelSelector: "app=rook-ceph-mon",
 	}
-	svcList, err := c.CoreV1().Services(ns).List(opt)
+	svcList, err := c.CoreV1().Services(ns).List(ctx, opt)
 	Expect(err).Should(BeNil())
 	services := make([]string, 0)
 	for i := range svcList.Items {
@@ -276,7 +279,7 @@ func createCephfsStorageClass(c kubernetes.Interface, f *framework.Framework, en
 	fsID = strings.Trim(fsID, "\n")
 	sc.Namespace = cephCSINamespace
 	sc.Parameters["clusterID"] = fsID
-	_, err := c.StorageV1().StorageClasses().Create(&sc)
+	_, err := c.StorageV1().StorageClasses().Create(ctx, &sc, metav1.CreateOptions{})
 	Expect(err).Should(BeNil())
 }
 
@@ -301,7 +304,7 @@ func createRBDStorageClass(c kubernetes.Interface, f *framework.Framework, param
 		sc.Parameters[k] = v
 	}
 	sc.Namespace = cephCSINamespace
-	_, err := c.StorageV1().StorageClasses().Create(&sc)
+	_, err := c.StorageV1().StorageClasses().Create(ctx, &sc, metav1.CreateOptions{})
 	Expect(err).Should(BeNil())
 }
 
@@ -370,14 +373,14 @@ func createConfigMap(pluginPath string, c kubernetes.Interface, f *framework.Fra
 	cm.Namespace = cephCSINamespace
 	// if the configmap is present update it,during cephcsi helm charts
 	// deployment empty configmap gets created we need to override it
-	_, err = c.CoreV1().ConfigMaps(cephCSINamespace).Get(cm.Name, metav1.GetOptions{})
+	_, err = c.CoreV1().ConfigMaps(cephCSINamespace).Get(ctx, cm.Name, metav1.GetOptions{})
 
 	if err == nil {
-		_, updateErr := c.CoreV1().ConfigMaps(cephCSINamespace).Update(&cm)
+		_, updateErr := c.CoreV1().ConfigMaps(cephCSINamespace).Update(ctx, &cm, metav1.UpdateOptions{})
 		Expect(updateErr).Should(BeNil())
 	}
 	if apierrs.IsNotFound(err) {
-		_, err = c.CoreV1().ConfigMaps(cephCSINamespace).Create(&cm)
+		_, err = c.CoreV1().ConfigMaps(cephCSINamespace).Create(ctx, &cm, metav1.CreateOptions{})
 	}
 
 	Expect(err).Should(BeNil())
@@ -408,7 +411,7 @@ func createCephfsSecret(c kubernetes.Interface, f *framework.Framework) {
 	delete(sc.StringData, "userID")
 	delete(sc.StringData, "userKey")
 	sc.Namespace = cephCSINamespace
-	_, err := c.CoreV1().Secrets(cephCSINamespace).Create(&sc)
+	_, err := c.CoreV1().Secrets(cephCSINamespace).Create(ctx, &sc, metav1.CreateOptions{})
 	Expect(err).Should(BeNil())
 }
 
@@ -423,7 +426,7 @@ func createRBDSecret(c kubernetes.Interface, f *framework.Framework) {
 	sc.StringData["userID"] = "admin"
 	sc.StringData["userKey"] = adminKey
 	sc.Namespace = cephCSINamespace
-	_, err := c.CoreV1().Secrets(cephCSINamespace).Create(&sc)
+	_, err := c.CoreV1().Secrets(cephCSINamespace).Create(ctx, &sc, metav1.CreateOptions{})
 	Expect(err).Should(BeNil())
 }
 
@@ -452,7 +455,7 @@ func createPVCAndvalidatePV(c kubernetes.Interface, pvc *v1.PersistentVolumeClai
 	timeout := time.Duration(t) * time.Minute
 	pv := &v1.PersistentVolume{}
 	var err error
-	_, err = c.CoreV1().PersistentVolumeClaims(pvc.Namespace).Create(pvc)
+	_, err = c.CoreV1().PersistentVolumeClaims(pvc.Namespace).Create(ctx, pvc, metav1.CreateOptions{})
 	Expect(err).Should(BeNil())
 	name := pvc.Name
 	start := time.Now()
@@ -460,7 +463,7 @@ func createPVCAndvalidatePV(c kubernetes.Interface, pvc *v1.PersistentVolumeClai
 
 	return wait.PollImmediate(poll, timeout, func() (bool, error) {
 		e2elog.Logf("waiting for PVC %s (%d seconds elapsed)", pvc.Name, int(time.Since(start).Seconds()))
-		pvc, err = c.CoreV1().PersistentVolumeClaims(pvc.Namespace).Get(name, metav1.GetOptions{})
+		pvc, err = c.CoreV1().PersistentVolumeClaims(pvc.Namespace).Get(ctx, name, metav1.GetOptions{})
 		if err != nil {
 			e2elog.Logf("Error getting pvc in namespace: '%s': %v", pvc.Namespace, err)
 			if testutils.IsRetryableAPIError(err) {
@@ -476,7 +479,7 @@ func createPVCAndvalidatePV(c kubernetes.Interface, pvc *v1.PersistentVolumeClai
 			return false, nil
 		}
 
-		pv, err = c.CoreV1().PersistentVolumes().Get(pvc.Spec.VolumeName, metav1.GetOptions{})
+		pv, err = c.CoreV1().PersistentVolumes().Get(ctx, pvc.Spec.VolumeName, metav1.GetOptions{})
 		if err != nil {
 			return false, err
 		}
@@ -498,16 +501,16 @@ func deletePVCAndValidatePV(c kubernetes.Interface, pvc *v1.PersistentVolumeClai
 	var err error
 	e2elog.Logf("Deleting PersistentVolumeClaim %v on namespace %v", name, nameSpace)
 
-	pvc, err = c.CoreV1().PersistentVolumeClaims(nameSpace).Get(name, metav1.GetOptions{})
+	pvc, err = c.CoreV1().PersistentVolumeClaims(nameSpace).Get(ctx, name, metav1.GetOptions{})
 	if err != nil {
 		return err
 	}
-	pv, err := c.CoreV1().PersistentVolumes().Get(pvc.Spec.VolumeName, metav1.GetOptions{})
+	pv, err := c.CoreV1().PersistentVolumes().Get(ctx, pvc.Spec.VolumeName, metav1.GetOptions{})
 	if err != nil {
 		return err
 	}
 
-	err = c.CoreV1().PersistentVolumeClaims(nameSpace).Delete(name, &metav1.DeleteOptions{})
+	err = c.CoreV1().PersistentVolumeClaims(nameSpace).Delete(ctx, name, metav1.DeleteOptions{})
 	if err != nil {
 		return fmt.Errorf("delete of PVC %v failed: %v", name, err)
 	}
@@ -515,7 +518,7 @@ func deletePVCAndValidatePV(c kubernetes.Interface, pvc *v1.PersistentVolumeClai
 	return wait.PollImmediate(poll, timeout, func() (bool, error) {
 		// Check that the PVC is really deleted.
 		e2elog.Logf("waiting for PVC %s in state %s  to be deleted (%d seconds elapsed)", name, pvc.Status.String(), int(time.Since(start).Seconds()))
-		pvc, err = c.CoreV1().PersistentVolumeClaims(nameSpace).Get(name, metav1.GetOptions{})
+		pvc, err = c.CoreV1().PersistentVolumeClaims(nameSpace).Get(ctx, name, metav1.GetOptions{})
 		if err == nil {
 			return false, nil
 		}
@@ -524,7 +527,7 @@ func deletePVCAndValidatePV(c kubernetes.Interface, pvc *v1.PersistentVolumeClai
 		}
 
 		// Examine the pv.ClaimRef and UID. Expect nil values.
-		_, err = c.CoreV1().PersistentVolumes().Get(pv.Name, metav1.GetOptions{})
+		_, err = c.CoreV1().PersistentVolumes().Get(ctx, pv.Name, metav1.GetOptions{})
 		if err == nil {
 			return false, nil
 		}
@@ -547,7 +550,7 @@ func loadApp(path string) (*v1.Pod, error) {
 }
 
 func createApp(c kubernetes.Interface, app *v1.Pod, timeout int) error {
-	_, err := c.CoreV1().Pods(app.Namespace).Create(app)
+	_, err := c.CoreV1().Pods(app.Namespace).Create(ctx, app, metav1.CreateOptions{})
 	if err != nil {
 		return err
 	}
@@ -559,7 +562,7 @@ func waitForPodInRunningState(name, ns string, c kubernetes.Interface, t int) er
 	start := time.Now()
 	e2elog.Logf("Waiting up to %v to be in Running state", name)
 	return wait.PollImmediate(poll, timeout, func() (bool, error) {
-		pod, err := c.CoreV1().Pods(ns).Get(name, metav1.GetOptions{})
+		pod, err := c.CoreV1().Pods(ns).Get(ctx, name, metav1.GetOptions{})
 		if err != nil {
 			return false, err
 		}
@@ -576,14 +579,14 @@ func waitForPodInRunningState(name, ns string, c kubernetes.Interface, t int) er
 
 func deletePod(name, ns string, c kubernetes.Interface, t int) error {
 	timeout := time.Duration(t) * time.Minute
-	err := c.CoreV1().Pods(ns).Delete(name, &metav1.DeleteOptions{})
+	err := c.CoreV1().Pods(ns).Delete(ctx, name, metav1.DeleteOptions{})
 	if err != nil {
 		return err
 	}
 	start := time.Now()
 	e2elog.Logf("Waiting for pod %v to be deleted", name)
 	return wait.PollImmediate(poll, timeout, func() (bool, error) {
-		_, err := c.CoreV1().Pods(ns).Get(name, metav1.GetOptions{})
+		_, err := c.CoreV1().Pods(ns).Get(ctx, name, metav1.GetOptions{})
 
 		if apierrs.IsNotFound(err) {
 			return true, nil
@@ -675,12 +678,12 @@ func validatePVCAndAppBinding(pvcPath, appPath string, f *framework.Framework) {
 
 func getImageInfoFromPVC(pvcNamespace, pvcName string, f *framework.Framework) (string, string, error) {
 	c := f.ClientSet.CoreV1()
-	pvc, err := c.PersistentVolumeClaims(pvcNamespace).Get(pvcName, metav1.GetOptions{})
+	pvc, err := c.PersistentVolumeClaims(pvcNamespace).Get(ctx, pvcName, metav1.GetOptions{})
 	if err != nil {
 		return "", "", err
 	}
 
-	pv, err := c.PersistentVolumes().Get(pvc.Spec.VolumeName, metav1.GetOptions{})
+	pv, err := c.PersistentVolumes().Get(ctx, pvc.Spec.VolumeName, metav1.GetOptions{})
 	if err != nil {
 		return "", "", err
 	}

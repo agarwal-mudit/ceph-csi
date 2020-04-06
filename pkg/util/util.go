@@ -40,6 +40,8 @@ const (
 	GiB = MiB * 1024
 )
 
+var ctx context.Context = context.Background()
+
 // RoundOffVolSize rounds up given quantity upto chunks of MiB/GiB
 func RoundOffVolSize(size int64) int64 {
 	size = RoundOffBytes(size)

@@ -29,7 +29,6 @@ import (
 	"time"
 
 	"github.com/ceph/ceph-csi/pkg/util"
-
 	"github.com/ceph/go-ceph/rados"
 	librbd "github.com/ceph/go-ceph/rbd"
 	"github.com/golang/protobuf/ptypes"
@@ -132,20 +131,21 @@ func createImage(ctx context.Context, pOpts *rbdVolume, cr *util.Credentials) er
 	logMsg := "rbd: create %s size %s (features: %s) using mon %s, pool %s "
 	if pOpts.DataPool != "" {
 		logMsg += fmt.Sprintf("data pool %s", pOpts.DataPool)
-		err := options.SetString(librbd.RbdImageOptionDataPool, pOpts.DataPool)
+		/*err := options.SetString(librbd.RbdImageOptionDataPool, pOpts.DataPool)
 		if err != nil {
 			return errors.Wrapf(err, "failed to set data pool")
-		}
+		}*/
 	}
 	klog.V(4).Infof(util.Log(ctx, logMsg),
 		pOpts.RbdImageName, volSzMiB, pOpts.ImageFeatures, pOpts.Monitors, pOpts.Pool)
 
 	if pOpts.ImageFeatures != "" {
-		features := imageFeaturesToUint64(ctx, pOpts.ImageFeatures)
+		/*features := imageFeaturesToUint64(ctx, pOpts.ImageFeatures)
 		err := options.SetUint64(librbd.RbdImageOptionFeatures, features)
 		if err != nil {
 			return errors.Wrapf(err, "failed to set image features")
 		}
+		*/
 	}
 
 	ioctx, err := pOpts.getIoctx(cr)
