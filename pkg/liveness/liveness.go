@@ -22,6 +22,7 @@ import (
 
 	"github.com/ceph/ceph-csi/pkg/util"
 	connlib "github.com/kubernetes-csi/csi-lib-utils/connection"
+	"github.com/kubernetes-csi/csi-lib-utils/metrics"
 	"github.com/kubernetes-csi/csi-lib-utils/rpc"
 	"github.com/prometheus/client_golang/prometheus"
 	"google.golang.org/grpc"
@@ -63,8 +64,8 @@ func recordLiveness(endpoint string, pollTime, timeout time.Duration) {
 	if err != nil {
 		klog.Fatalln(err)
 	}
-
-	csiConn, err := connlib.Connect(endpoint)
+	cmm := metrics.NewCSIMetricsManager("")
+	csiConn, err := connlib.Connect(endpoint, cmm)
 	if err != nil {
 		// connlib should retry forever so a returned error should mean
 		// the grpc client is misconfigured rather than an error on the network
